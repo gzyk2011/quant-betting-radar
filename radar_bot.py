@@ -14,26 +14,24 @@ def send_tg(text):
         print(f"DEBUG: {text}")
         return
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    try:
-        requests.post(url, json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"}, timeout=10)
-    except Exception as e:
-        print(f"TG 发送失败: {e}")
+    requests.post(url, json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"})
 
 def run_radar():
-    print("🚀 启动全球联赛全能扫描...")
-    # 发送一个心跳信号
-    send_tg("📡 *量化雷达已启动*：正在扫描全球活跃联赛（含美职联/五大联赛）...")
+    print("🚀 启动基于官方清单的全球扫描...")
+    # 发送一个启动信号，证明云端活着
+    send_tg("📡 *量化雷达已启动*：正在根据官方清单扫描英甲/英乙等活跃赛事...")
     
-    # 联赛配置：包含欧洲五大联赛和美超(MLS)
-    # 注意：MLS 通常按自然年计算赛季，2026年赛季用 "2026" 或 "2025-2026" 视数据源更新而定
+    # 严格按照你刚刚跑出来的 test.py 清单进行配置
     leagues = [
-        ("USA MLS", "2026"),                # 正在赛季中！
-        ("ENG Premier League", "2025-2026"), # 下周回归
-        ("ENG Championship", "2025-2026"),
-        ("GER 1. Bundesliga", "2025-2026"),
-        ("ITA Serie A", "2025-2026"),
+        ("ENG League 1", "2025-2026"),
+        ("ENG League 2", "2025-2026"),
+        ("ENG Premier League", "2025-2026"),
+        ("DEU Bundesliga 1", "2025-2026"),
         ("ESP La Liga", "2025-2026"),
-        ("FRA Ligue 1", "2025-2026")
+        ("ITA Serie A", "2025-2026"),
+        ("FRA Ligue 1", "2025-2026"),
+        ("NLD Eredivisie", "2025-2026"),
+        ("BEL First Division A", "2025-2026")
     ]
     
     found_any = False
@@ -41,47 +39,39 @@ def run_radar():
 
     for label, season in leagues:
         try:
-            print(f"正在拉取: {label} ({season})...")
+            print(f"正在拉取官方联赛: {label}...")
             df = pb.scrapers.FootballData(label, season).get_fixtures()
             
-            # 区分历史(训练)与未来(预测)
             df_train = df.dropna(subset=['fthg', 'ftag'])
             df_upcoming = df[df['fthg'].isna()]
             
             if df_upcoming.empty:
-                print(f"--- {label}: 暂无未来赛程 ---")
                 continue
 
             # 训练模型
-            model = pb.models.DixonColesGoalModel(
-                df_train["goals_home"], df_train["goals_away"], 
-                df_train["team_home"], df_train["team_away"]
-            )
+            model = pb.models.DixonColesGoalModel(df_train["goals_home"], df_train["goals_away"], df_train["team_home"], df_train["team_away"])
             model.fit(use_gradient=True, minimizer_options={"disp": False})
 
-            # 扫描未来比赛
             for _, match in df_upcoming.iterrows():
                 h, a = match['team_home'], match['team_away']
-                # 获取 Bet365 赔率 (部分联赛可能在列名上有细微差别，用 get 保护)
                 o_h = match.get('b365_h')
                 
-                if pd.notna(o_h) and 1.5 <= o_h <= 4.0:
+                # 设置较宽松的门槛（2%），确保能在国际比赛日期间抓到低级别联赛机会
+                if pd.notna(o_h) and 1.3 <= o_h <= 4.5:
                     pred = model.predict(h, a)
-                    # 策略：Edge > 3% (稍微降低门槛确保你能看到信号)
                     edge = pred.home_win - (1/o_h)
                     
-                    if edge > 0.03:
+                    if edge > 0.02: 
                         found_any = True
                         report.append(f"🏆 *{label}*\n⚽ {h} vs {a}\n📈 建议: 主胜 | 赔率: `{o_h}`\n🔥 优势: `{edge:.2%}`\n")
-                        
         except Exception as e:
-            print(f"跳过 {label}: 错误 {str(e)[:30]}")
+            print(f"跳过 {label}: 名称不匹配或数据源错误 ({e})")
             continue
 
     if found_any:
         send_tg("\n".join(report))
     else:
-        send_tg("✅ *扫描完成*：当前全球活跃联赛暂无符合策略的盘口，建议继续观望。")
+        send_tg("✅ *扫描完成*：当前活跃联赛（英甲/英乙等）暂无符合策略的场次。")
 
 if __name__ == "__main__":
     run_radar()
