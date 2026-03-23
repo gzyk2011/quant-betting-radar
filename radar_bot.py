@@ -103,3 +103,8 @@ def run_radar():
 
 if __name__ == "__main__":
     run_radar()
+    if len(messages) > 1:
+        send_telegram_message("\n".join(messages))
+    else:
+        # 保底消息：确认雷达没偷懒
+        send_telegram_message("✅ *雷达扫描完毕*\n当前五大联赛暂无符合策略的价值投注，继续管住手！")
