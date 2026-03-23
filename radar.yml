@@ -1,0 +1,30 @@
+name: Quant Betting Radar
+
+on:
+  schedule:
+    # 定时任务：每周五和周六的 UTC 时间上午 10:00 执行扫描
+    - cron: '0 10 * * 5,6'
+  workflow_dispatch: # 允许你在网页上手动点击运行
+
+jobs:
+  scan-value-bets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+
+      - name: 运行雷达扫描
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          python radar_bot.py
