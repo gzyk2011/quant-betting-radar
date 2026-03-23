@@ -22,7 +22,16 @@ def run_radar():
     messages = ["🚨 *量化足球雷达扫描报告* 🚨\n"]
     
     # 我们可以配置多个有正向 ROI 的联赛，这里以英冠为例
-    leagues = [("ENG Championship", "2023-2024")] # 实际使用时改为当前赛季 "2024-2025"
+    leagues = # 扩展为五大联赛 + 英冠
+    leagues = [
+        ("ENG Premier League", "2023-2024"), # 英超
+        ("ENG Championship", "2023-2024"),   # 英冠
+        ("GER Bundesliga", "2023-2024"),     # 德甲
+        ("ITA Serie A", "2023-2024"),        # 意甲
+        ("ESP La Liga", "2023-2024"),        # 西甲
+        ("FRA Ligue 1", "2023-2024")         # 法甲
+    ]
+    # 注意：实际操作中，如果你现在跑的是 2026 年，请确保赛季字符串匹配数据源 # 实际使用时改为当前赛季 "2024-2025"
     
     for comp, season in leagues:
         print(f"正在拉取 {comp} 数据...")
