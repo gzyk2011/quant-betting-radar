@@ -75,3 +75,11 @@ def run_ultimate_radar():
 
 if __name__ == "__main__":
     run_ultimate_radar()
+    if __name__ == "__main__":
+    # 在运行正式逻辑前，先发一条测试消息
+    send_tg("🔔 *雷达测试*：云端连接成功，正在开始扫描五大联赛...")
+    
+    run_radar()
+    
+    # 扫描结束后再发一条
+    send_tg("🏁 *扫描结束*：已完成全部联赛比对。")
