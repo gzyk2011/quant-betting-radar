@@ -3,108 +3,75 @@ import pandas as pd
 import requests
 import os
 import warnings
+
 warnings.filterwarnings("ignore")
 
-# 从环境变量获取 Telegram 配置 (GitHub Actions 会注入这些变量)
-TG_TOKEN = os.environ.get("AAGdETj2rEWhboXXfL5cCH-Ky6f2Y4J6NVE")
-TG_CHAT_ID = os.environ.get("5097285321")
+# 从 GitHub Secrets 获取配置
+TG_TOKEN = os.environ.get("TG_TOKEN")
+TG_CHAT_ID = os.environ.get("TG_CHAT_ID")
 
-def send_telegram_message(text):
-    if not TG_TOKEN or not TG_CHAT_ID:
-        print("未配置 TG_TOKEN，仅在控制台打印：\n", text)
-        return
+def send_tg(text):
+    if not TG_TOKEN: return print(text)
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    payload = {"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"}
-    requests.post(url, json=payload)
+    requests.post(url, json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"})
 
-def run_radar():
-    print("🚀 启动全网联赛价值扫描雷达...")
-    messages = ["🚨 *量化足球雷达扫描报告* 🚨\n"]
+def run_ultimate_radar():
+    print("🚀 正在启动全功能量化雷达...")
+    messages = ["🌟 *PenaltyBlog 终极策略报告* 🌟\n"]
     
-    # 我们可以配置多个有正向 ROI 的联赛，这里以英冠为例
-    leagues = # 扩展为五大联赛 + 英冠
+    # 定义要扫描的所有顶级联赛
     leagues = [
-        ("ENG Premier League", "2023-2024"), # 英超
-        ("ENG Championship", "2023-2024"),   # 英冠
-        ("GER Bundesliga", "2023-2024"),     # 德甲
-        ("ITA Serie A", "2023-2024"),        # 意甲
-        ("ESP La Liga", "2023-2024"),        # 西甲
-        ("FRA Ligue 1", "2023-2024")         # 法甲
+        ("ENG Premier League", "E0"), ("ENG Championship", "E1"),
+        ("GER Bundesliga", "D1"), ("ITA Serie A", "I1"),
+        ("ESP La Liga", "SP1"), ("FRA Ligue 1", "F1")
     ]
-    # 注意：实际操作中，如果你现在跑的是 2026 年，请确保赛季字符串匹配数据源 # 实际使用时改为当前赛季 "2024-2025"
     
-    for comp, season in leagues:
-        print(f"正在拉取 {comp} 数据...")
-        df = pb.scrapers.FootballData(comp, season).get_fixtures()
-        
-        # 划分历史数据(用于训练)和未来数据(未踢的比赛，用于预测)
-        # football-data.co.uk 中未踢的比赛 fthg (主队进球) 会是 NaN
-        df_train = df.dropna(subset=['fthg', 'ftag'])
-        df_upcoming = df[df['fthg'].isna()]
-        
-        if df_upcoming.empty:
-            continue
+    for label, code in leagues:
+        try:
+            print(f"分析中: {label}...")
+            # 1. 抓取数据
+            df = pb.scrapers.FootballData(label, "2023-2024").get_fixtures()
+            df_train = df.dropna(subset=['fthg', 'ftag'])
+            df_upcoming = df[df['fthg'].isna()]
             
-        # 训练基座模型
-        weights = pb.models.dixon_coles_weights(df_train["date"], xi=0.0015)
-        model = pb.models.DixonColesGoalModel(
-            df_train["goals_home"].values, df_train["goals_away"].values, 
-            df_train["team_home"].values, df_train["team_away"].values, weights=weights
-        )
-        model.fit(use_gradient=True, minimizer_options={"disp": False})
-        
-        # 扫描未开赛的场次
-        for _, match in df_upcoming.iterrows():
-            home, away = match['team_home'], match['team_away']
-            odds_h, odds_d, odds_a = match['b365_h'], match['b365_d'], match['b365_a']
-            
-            # 如果没有提前开出赔率，跳过
-            if pd.isna(odds_h) or odds_h <= 1.0:
-                continue
-                
-            try:
-                pred = model.predict(home, away)
-            except ValueError:
-                continue
+            if df_upcoming.empty: continue
 
-            outcomes = [("主胜", odds_h, pred.home_win), ("平局", odds_d, pred.draw), ("客胜", odds_a, pred.away_win)]
-            
-            for name, odds, prob in outcomes:
-                # 策略 1：黄金赔率区间 1.5 ~ 3.5
-                if odds < 1.5 or odds > 3.5:
-                    continue
-                    
-                implied_prob = 1 / odds
-                edge = prob - implied_prob
+            # 2. 整合 Elo 评级 (长期实力维度)
+            elo = pb.ratings.Elo()
+            elo.update(df_train["goals_home"], df_train["goals_away"], df_train["team_home"], df_train["team_away"])
+            current_ratings = elo.get_ratings()
+
+            # 3. 训练 Dixon-Coles 模型 (进球率维度)
+            weights = pb.models.dixon_coles_weights(df_train["date"], xi=0.0015)
+            model = pb.models.DixonColesGoalModel(
+                df_train["goals_home"].values, df_train["goals_away"].values, 
+                df_train["team_home"].values, df_train["team_away"].values, weights=weights
+            )
+            model.fit(use_gradient=True)
+
+            # 4. 扫描预测
+            for _, match in df_upcoming.iterrows():
+                h, a = match['team_home'], match['team_away']
+                odds = [match.get('b365_h'), match.get('b365_d'), match.get('b365_a')]
                 
-                # 策略 2：Edge > 5%
-                if edge > 0.05:
-                    # 策略 3：1/20 凯利风控
-                    kc = pb.betting.kelly_criterion(odds, prob, 0.05).stake
-                    if kc > 0:
-                        ev = (prob * (odds - 1)) - (1 - prob)
-                        msg = (
-                            f"⚽ *{home} vs {away}*\n"
-                            f"💡 建议买入: *{name}*\n"
-                            f"🏦 盘口赔率: `{odds}`\n"
-                            f"📊 模型胜率: `{prob:.2%}` (市场: `{implied_prob:.2%}`)\n"
-                            f"🔥 Edge优势: `{edge:.2%}` | EV: `{ev:.2%}`\n"
-                            f"💰 推荐仓位: `{float(kc):.2%}`\n"
-                            "------------------------"
-                        )
-                        messages.append(msg)
-                        print(f"发现目标：{home} vs {away} - {name}")
-                        
-    if len(messages) > 1:
-        send_telegram_message("\n".join(messages))
-    else:
-        print("当前无符合策略的价值投注。")
-        # send_telegram_message("本期扫描完毕，未发现高价值盘口，继续管住手！")
+                if any(pd.isna(o) or o < 1.5 or o > 3.5 for o in odds): continue
+
+                # 使用 Shin 方法精准剔除抽水
+                implied = pb.implied.calculate_implied(odds, method="shin")
+                pred = model.predict(h, a)
+                
+                # 策略核心：Edge > 5% 且 Elo 评级优势
+                edge = pred.home_win - implied.probabilities[0]
+                elo_diff = current_ratings.get(h, 1000) - current_ratings.get(a, 1000)
+                
+                if edge > 0.05 and elo_diff > 50:
+                    kc = pb.betting.kelly_criterion(odds[0], pred.home_win, 0.05).stake
+                    messages.append(f"🏆 *{label}*\n🔥 目标: {h} vs {a}\n✅ 推荐: 主胜\n💰 赔率: `{odds[0]}` | Edge: `{edge:.2%}`\n📊 Elo优势: `{int(elo_diff)}` | 推荐仓位: `{float(kc):.2%}`\n")
+                    
+        except Exception as e:
+            print(f"跳过 {label}: {e}")
+
+    send_tg("\n".join(messages) if len(messages) > 1 else "✅ *雷达扫描完毕*\n当前全网无复合高ROI策略的场次，继续保持耐心。")
 
 if __name__ == "__main__":
-    run_radar()
-    if len(messages) > 1:
-        send_telegram_message("\n".join(messages))
-    else:
-        # 保底消息：确认雷达没偷懒
-        send_telegram_message("✅ *雷达扫描完毕*\n当前五大联赛暂无符合策略的价值投注，继续管住手！")
+    run_ultimate_radar()
