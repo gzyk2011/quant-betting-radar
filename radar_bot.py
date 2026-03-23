@@ -11,10 +11,18 @@ TG_CHAT_ID = os.environ.get("TG_CHAT_ID")
 
 def send_tg(text):
     if not TG_TOKEN or not TG_CHAT_ID:
-        print(f"DEBUG: {text}")
+        print("❌ 错误：GitHub Secrets 没配置好，找不到 Token 或 ID")
         return
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"})
+    payload = {"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"}
+    
+    response = requests.post(url, json=payload)
+    
+    if response.status_code == 200:
+        print("✅ Telegram 消息发送成功！")
+    else:
+        print(f"❌ Telegram 发送失败！错误码：{response.status_code}")
+        print(f"❌ 错误详情：{response.text}") # 这行会告诉你到底是 Token 错了还是没点 Start
 
 def run_radar():
     print("🚀 启动基于官方清单的全球扫描...")
